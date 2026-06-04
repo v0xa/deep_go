@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -15,23 +16,43 @@ type COWBuffer struct {
 }
 
 func NewCOWBuffer(data []byte) COWBuffer {
-	return COWBuffer{} // need to implement
+	return COWBuffer{
+		data: data,
+		refs: new(int),
+	} // need to implement
 }
 
 func (b *COWBuffer) Clone() COWBuffer {
-	return COWBuffer{} // need to implement
+	*b.refs++
+	return COWBuffer{
+		data: b.data,
+		refs: b.refs,
+	} // need to implement
 }
 
 func (b *COWBuffer) Close() {
-	// need to implement
+	if *b.refs != 0 {
+		*b.refs--
+	} else {
+		b.data = nil
+	}
 }
 
 func (b *COWBuffer) Update(index int, value byte) bool {
-	return false // need to implement
+	if index < 0 || index >= len(b.data) {
+		return false
+	}
+
+	if *b.refs != 0 {
+		*b.refs--
+		b.data = append([]byte{}, b.data...)
+	}
+	b.data[index] = value
+	return true
 }
 
 func (b *COWBuffer) String() string {
-	return "" // need to implement
+	return unsafe.String(unsafe.SliceData(b.data), len(b.data))
 }
 
 func TestCOWBuffer(t *testing.T) {
@@ -41,7 +62,9 @@ func TestCOWBuffer(t *testing.T) {
 
 	copy1 := buffer.Clone()
 	copy2 := buffer.Clone()
-
+	runtime.SetFinalizer(&copy1, func(b *COWBuffer) {
+		b.Close()
+	})
 	assert.Equal(t, unsafe.SliceData(data), unsafe.SliceData(buffer.data))
 	assert.Equal(t, unsafe.SliceData(buffer.data), unsafe.SliceData(copy1.data))
 	assert.Equal(t, unsafe.SliceData(copy1.data), unsafe.SliceData(copy2.data))
